@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador de Campanhas Profissional", layout="wide")
+st.set_page_config(page_title="Simulador de Margem Real", layout="wide")
 
-# Tabela de Custos Reais (Anexo 1)
+# Tabela de Custos Reais
 dados_custos = {
     "5kg (36 Módulos)": {
         "modulos": 36,
@@ -17,19 +17,19 @@ dados_custos = {
     }
 }
 
-st.title("📊 Simulador de Precificação e DRE")
+st.title("📊 Calculadora de Margem e Viabilidade")
 st.markdown("---")
 
 # --- SIDEBAR: CONFIGURAÇÕES ---
-st.sidebar.header("⚙️ Parâmetros Base")
+st.sidebar.header("⚙️ Configurações da Campanha")
 tamanho = st.sidebar.selectbox("Tamanho do Saquinho", list(dados_custos.keys()))
 tiragem = st.sidebar.selectbox("Tiragem (unidades)", list(dados_custos[tamanho]["precos"].keys()))
 duracao = st.sidebar.selectbox("Duração da Campanha", [1, 3, 6], format_func=lambda x: f"{x} meses")
 
 st.sidebar.markdown("---")
-st.sidebar.header("💰 Estratégia de Preço")
-# Margem Alvo começando em 0% como solicitado
-margem_alvo = st.sidebar.slider("Margem de Lucro Alvo (%)", 0, 80, 30)
+st.sidebar.header("💰 Entrada de Valores")
+# O franqueado agora insere o valor manualmente
+v_total_venda_input = st.sidebar.number_input(f"Valor Total do Contrato por Módulo (R$)", min_value=0.0, value=1500.0, step=50.0)
 comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 30, 10)
 
 # --- CUSTOS FIXOS E SETUP ---
@@ -37,19 +37,8 @@ C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 81.00, 500.00, 200.00, 600.00
 mod_max = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
 
-# --- LÓGICA DE SUGESTÃO DE PREÇO (VALOR TOTAL) ---
-# 1. Custo total acumulado no período
-custo_total_periodo = custo_prod + C_FRETE + ((C_ROY + C_MEI + C_GAS + C_OUT) * duracao)
-# 2. Sugestão de Preço TOTAL por módulo para atingir a margem alvo
-# Fórmula de Markup Divisor aplicada sobre o custo total do período
-preco_total_sugerido = (custo_total_periodo / mod_max) / (1 - (margem_alvo / 100)) if margem_alvo < 100 else 0
-
-# --- INPUT DO VALOR DE VENDA TOTAL ---
-st.sidebar.markdown(f"**Sugestão de Venda Total: R$ {preco_total_sugerido:,.2f}**")
-v_total_venda = st.sidebar.number_input(f"Valor Total da Venda por Módulo ({duracao} meses)", min_value=0.0, value=float(preco_total_sugerido))
-
-# Valor mensal para o cálculo do DRE
-v_mensal_venda = v_total_venda / duracao
+# Valor mensal para cálculos internos
+v_mensal_venda = v_total_venda_input / duracao
 
 # --- PROCESSAMENTO DO DRE ---
 indices = [
@@ -68,33 +57,36 @@ df_dre = pd.DataFrame(index=indices)
 for i in range(1, duracao + 1):
     receita_mes = mod_max * v_mensal_venda
     comis_mes = receita_mes * (comissao_percent / 100)
-    p_prod = custo_prod if i == 1 else 0.0
-    p_frete = C_FRETE if i == 1 else 0.0
+    p_prod_mes = custo_prod if i == 1 else 0.0
+    p_frete_mes = C_FRETE if i == 1 else 0.0
     
-    total_despesas_mes = p_prod + p_frete + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes
-    lucro_mes = receita_mes - total_despesas_mes
+    total_custos_mes = p_prod_mes + p_frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes
+    lucro_mes = receita_mes - total_custos_mes
     
     df_dre[f"Mês {i}"] = [
-        receita_mes, p_prod, p_frete, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes
+        receita_mes, p_prod_mes, p_frete_mes, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes
     ]
 
 # Coluna de Total Acumulado
 df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
 
-# --- PONTO DE EQUILÍBRIO FINANCEIRO (Mês 1) ---
-# Custos que precisam ser pagos no Mês 1
+# --- CÁLCULOS DE RESULTADO ---
+faturamento_total_campanha = df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]
+lucro_total_campanha = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
+margem_real = (lucro_total_campanha / faturamento_total_campanha * 100) if faturamento_total_campanha > 0 else 0
+
+# --- PONTO DE EQUILÍBRIO (VALOR NO MÊS 1) ---
 custos_setup_fixos_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
-# Faturamento bruto necessário no Mês 1 para lucro zero (considerando comissão)
 faturamento_pe_mes1 = custos_setup_fixos_mes1 / (1 - (comissao_percent / 100))
 
 # --- FORMATAÇÃO E CORES ---
 def highlight_lucro(val):
     if isinstance(val, (int, float)):
-        color = '#90EE90' if val >= 0 else '#FFB6C1' # Verde ou Vermelho claro
+        color = '#90EE90' if val >= 0 else '#FFB6C1'
         return f'background-color: {color}'
     return ''
 
-st.subheader(f"📋 DRE Detalhado - Campanha {duracao} meses")
+st.subheader(f"📋 DRE Comparativo - {tamanho} / {tiragem} un. / {duracao} meses")
 styled_df = df_dre.style.format("{:,.2f}")\
     .applymap(highlight_lucro, subset=pd.IndexSlice[['LUCRO LÍQUIDO'], :])
 
@@ -105,18 +97,24 @@ st.markdown("---")
 c1, c2, c3 = st.columns(3)
 
 with c1:
-    st.metric("Venda Sugerida (Total)", f"R$ {preco_total_sugerido:,.2f}")
-    st.caption(f"Valor total por módulo para {duracao} meses")
+    st.metric("Margem Líquida Real", f"{margem_real:.1f}%")
+    st.caption("Margem final após todos os custos e comissões")
 
 with c2:
-    st.metric("Ponto Equilíbrio (Mês 1)", f"R$ {faturamento_pe_mes1:,.2f}")
-    st.caption("Faturamento bruto necessário no 1º mês")
+    st.metric("Ponto de Equilíbrio (Mês 1)", f"R$ {faturamento_pe_mes1:,.2f}")
+    st.caption("Faturamento necessário no 1º mês para lucro zero")
 
 with c3:
-    lucro_total = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
-    st.metric("Lucro Líquido Final", f"R$ {lucro_total:,.2f}")
-    st.caption(f"Resultado acumulado da campanha")
+    st.metric("Lucro Líquido Total", f"R$ {lucro_total_campanha:,.2f}")
+    st.caption("Resultado final que sobra para o franqueado")
+
+# Mensagem de Viabilidade
+lucro_mes1 = df_dre.loc["LUCRO LÍQUIDO", "Mês 1"]
+if lucro_mes1 >= 0:
+    st.success(f"✅ O valor de venda de R$ {v_total_venda_input:,.2f} garante lucro positivo logo no primeiro mês!")
+else:
+    st.warning(f"⚠️ Com este valor, o primeiro mês terá um déficit de R$ {abs(lucro_mes1):,.2f}. O lucro será recuperado nos meses seguintes.")
 
 # Botão de Download
 csv = df_dre.to_csv().encode('utf-8')
-st.download_button("📥 Baixar Relatório (CSV)", data=csv, file_name='dre_campanha.csv', mime='text/csv')
+st.download_button("📥 Baixar Relatório CSV", data=csv, file_name='dre_campanha.csv', mime='text/csv')
