@@ -1,1 +1,64 @@
-import streamlit as stimport pandas as pdimport plotly.graph_objects as go# Configuração da página e Cores Marketing Bagst.set_page_config(page_title="Simulador Marketing Bag", layout="wide")# CSS para deixar com a cara da marcast.markdown("""    <style>    .main { background-color: #fdfdfd; }    .stButton>button { background-color: #FFD700; color: black; font-weight: bold; }    .metric-card { background-color: #ffffff; border: 1px solid #FFD700; padding: 15px; border-radius: 10px; }    h1, h2, h3 { color: #000000; }    </style>    """, unsafe_allow_index=True)st.title("?? Simulador de Resultado - Marketing Bag")st.markdown("---")# --- ENTRADAS DE DADOS (COLUNA LATERAL) ---with st.sidebar:    st.image("https://marketingbag.com.br/wp-content/uploads/2021/05/logo-marketing-bag.png", width=200) # Logo oficial    st.header("?? Configurações")        periodo = st.selectbox("Duração da Campanha", ["Mensal", "Trimestral", "Semestral"])    fator_meses = {"Mensal": 1, "Trimestral": 3, "Semestral": 6}[periodo]        st.subheader("?? Vendas")    valor_modulo = st.number_input("Preço de Venda do Módulo (R$)", value=550.0)    modulos_vendidos = st.slider("Módulos Vendidos por Tiragem", 1, 32, 24)    comissao_pct = st.slider("% Comissão do Vendedor", 0, 20, 10)    st.subheader("?? Custos de Produção (por tiragem)")    custo_grafica = st.number_input("Produção da Gráfica (R$)", value=1300.0)    frete = st.number_input("Frete (R$)", value=150.0)    st.subheader("? Custos Operacionais (Mensais)")    royalties_fixos = st.number_input("Royalties Fixos (R$)", value=500.0)    gasolina = st.number_input("Gasolina/Logística (R$)", value=200.0)    outros_custos = st.number_input("Outros Custos (R$)", value=100.0)# --- CÁLCULOS ---faturamento_total = (valor_modulo * modulos_vendidos) * fator_mesescomissao_total = faturamento_total * (comissao_pct / 100)# Custos Totais no Períodototal_producao = (custo_grafica + frete) * fator_mesestotal_operacional = (royalties_fixos + gasolina + outros_custos) * fator_mesescusto_geral = total_producao + total_operacional + comissao_totallucro_liquido = faturamento_total - custo_geralmargem_lucro = (lucro_liquido / faturamento_total) * 100 if faturamento_total > 0 else 0# --- EXIBIÇÃO ---col1, col2, col3, col4 = st.columns(4)with col1:    st.metric("Faturamento Total", f"R$ {faturamento_total:,.2f}")with col2:    st.metric("Custo Total", f"R$ {custo_geral:,.2f}", delta_color="inverse")with col3:    st.metric("Lucro Líquido", f"R$ {lucro_liquido:,.2f}")with col4:    st.metric("Margem Real", f"{margem_lucro:.1f}%")st.markdown("---")# --- TABELA DE CENÁRIOS ---st.subheader("?? Comparativo de Cenários")def calcular_cenario(qtd):    fat = (valor_modulo * qtd) * fator_meses    comis = fat * (comissao_pct / 100)    custo = total_producao + total_operacional + comis    return fat, fat - custocenarios_data = {    "Cenário": ["Mínimo (12 módulos)", "Pessimista (16 módulos)", "Atual (Simulado)", "Otimista (32 módulos)"],    "Módulos": [12, 16, modulos_vendidos, 32]}df_cenarios = pd.DataFrame(cenarios_data)df_cenarios[['Faturamento', 'Lucro Líquido']] = df_cenarios['Módulos'].apply(    lambda x: pd.Series(calcular_cenario(x)))st.table(df_cenarios.style.format({"Faturamento": "R$ {:.2f}", "Lucro Líquido": "R$ {:.2f}"}))# --- BOTÃO WHATSAPP ---mensagem = f"Simulação Marketing Bag: Faturamento R${faturamento_total:.2f}, Lucro R${lucro_liquido:.2f}"st.markdown(f'''    <a href="https://wa.me/?text={mensagem}" target="_blank">        <button style="width:100%; height:50px; border-radius:10px; background-color:#25D366; color:white; border:none; cursor:pointer;">            ?? Enviar Simulação via WhatsApp        </button>    </a>''', unsafe_allow_index=True)
+import streamlit as st
+
+# Configura√ß√£o da p√°gina
+st.set_page_config(page_title="Calculadora de Precifica√ß√£o", layout="centered")
+
+# Dados de Custos
+dados_custos = {
+    "5kg (36 M√≥dulos)": {
+        "modulos": 36,
+        "precos": {10000: 4531.50, 15000: 5177.10, 20000: 6319.60, 30000: 8306.40,
+                   40000: 9744.40, 50000: 12180.50, 100000: 20663.00, 200000: 40928.00}
+    },
+    "4kg (32 M√≥dulos)": {
+        "modulos": 32,
+        "precos": {20000: 5225.00, 30000: 7122.30, 40000: 9496.40, 
+                   50000: 10066.50, 100000: 17069.00, 200000: 33810.00}
+    }
+}
+
+st.title("üìä Precifica√ß√£o de Campanhas")
+st.markdown("---")
+
+# Colunas de Input
+col1, col2 = st.columns(2)
+
+with col1:
+    tamanho = st.selectbox("Tamanho do Saquinho", list(dados_custos.keys()))
+    tiragens_disponiveis = list(dados_custos[tamanho]["precos"].keys())
+    tiragem = st.selectbox("Tiragem (unidades)", tiragens_disponiveis)
+
+with col2:
+    duracao = st.radio("Dura√ß√£o da Campanha", [1, 3], format_func=lambda x: f"{x} m√™s(es)")
+    preco_venda = st.number_input("Pre√ßo de Venda por M√≥dulo (R$)", min_value=0.0, value=500.0)
+
+# C√°lculos
+modulos = dados_custos[tamanho]["modulos"]
+custo_producao = dados_custos[tamanho]["precos"][tiragem]
+frete = 600.00
+custos_fixos_mensais = 399 + 81 + 500 + 200  # Royalties, MEI, Gasolina, Outros
+custo_fixo_total = custos_fixos_mensais * duracao
+
+faturamento_total = modulos * preco_venda
+custo_total_projeto = custo_producao + frete + custo_fixo_total
+lucro_total = faturamento_total - custo_total_projeto
+lucratividade = (lucro_total / faturamento_total * 100) if faturamento_total > 0 else 0
+pe_modulos = custo_total_projeto / preco_venda if preco_venda > 0 else 0
+
+# Exibi√ß√£o do DRE
+st.subheader("üìã DRE da Campanha")
+c1, c2, c3 = st.columns(3)
+c1.metric("Faturamento", f"R$ {faturamento_total:,.2f}")
+c2.metric("Lucro L√≠quido", f"R$ {lucro_total:,.2f}", delta=f"{lucratividade:.1f}%")
+c3.metric("Ponto Equil√≠brio", f"{pe_modulos:.1f} mod.")
+
+with st.expander("Ver Detalhes dos Custos"):
+    st.write(f"**Custo Produ√ß√£o:** R$ {custo_producao:,.2f}")
+    st.write(f"**Frete:** R$ {frete:,.2f}")
+    st.write(f"**Custos Fixos Totais ({duracao}m):** R$ {custo_fixo_total:,.2f}")
+    st.info(f"O custo fixo inclui: Royalties, MEI, Gasolina e Outros (R$ {custos_fixos_mensais:,.2f}/m√™s)")
+
+if lucro_total < 0:
+    st.error("Aten√ß√£o: Esta configura√ß√£o resulta em preju√≠zo!")
+else:
+    st.success("Configura√ß√£o de campanha lucrativa.")
