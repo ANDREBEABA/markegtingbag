@@ -33,7 +33,7 @@ v_total_venda_input = st.sidebar.number_input(f"Valor Total do Contrato por Mód
 comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 30, 10)
 
 # --- CUSTOS FIXOS E SETUP ---
-C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 81.00, 500.00, 200.00, 600.00
+C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 87.05, 500.00, 200.00, 600.00
 mod_max = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
 v_mensal_venda = v_total_venda_input / duracao
