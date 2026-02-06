@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
+import io
 
-st.set_page_config(page_title="Simulador de Margem Real", layout="wide")
+st.set_page_config(page_title="Simulador Financeiro", layout="wide")
 
 # Tabela de Custos Reais
 dados_custos = {
@@ -35,7 +36,6 @@ comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 30, 10
 C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 81.00, 500.00, 200.00, 600.00
 mod_max = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
-
 v_mensal_venda = v_total_venda_input / duracao
 
 # --- PROCESSAMENTO DO DRE ---
@@ -47,18 +47,10 @@ for i in range(1, duracao + 1):
     comis_mes = receita_mes * (comissao_percent / 100)
     p_prod_mes = custo_prod if i == 1 else 0.0
     p_frete_mes = C_FRETE if i == 1 else 0.0
-    total_custos_mes = p_prod_mes + p_frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes
-    lucro_mes = receita_mes - total_custos_mes
+    lucro_mes = receita_mes - (p_prod_mes + p_frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes)
     df_dre[f"Mês {i}"] = [receita_mes, p_prod_mes, p_frete_mes, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes]
 
 df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
-
-# --- CÁLCULOS DE RESULTADO ---
-faturamento_total_campanha = df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]
-lucro_total_campanha = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
-margem_real = (lucro_total_campanha / faturamento_total_campanha * 100) if faturamento_total_campanha > 0 else 0
-custos_setup_fixos_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
-faturamento_pe_mes1 = custos_setup_fixos_mes1 / (1 - (comissao_percent / 100))
 
 # --- FORMATAÇÃO E CORES ---
 def highlight_lucro(val):
@@ -74,6 +66,12 @@ st.dataframe(styled_df, use_container_width=True)
 # --- DASHBOARD DE MÉTRICAS ---
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
+lucro_total_campanha = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
+faturamento_total_campanha = df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]
+margem_real = (lucro_total_campanha / faturamento_total_campanha * 100) if faturamento_total_campanha > 0 else 0
+custos_setup_fixos_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
+faturamento_pe_mes1 = custos_setup_fixos_mes1 / (1 - (comissao_percent / 100))
+
 with c1:
     st.metric("Margem Líquida Real", f"{margem_real:.1f}%")
 with c2:
@@ -81,24 +79,22 @@ with c2:
 with c3:
     st.metric("Lucro Líquido Total", f"R$ {lucro_total_campanha:,.2f}")
 
-# --- BOTÕES DE EXPORTAÇÃO ---
+# --- BOTÕES DE DOWNLOAD (RESOLVIDO) ---
 st.markdown("---")
-col_down1, col_down2 = st.columns(2)
+col_csv, col_pdf = st.columns(2)
 
-with col_down1:
-    # Botão CSV Nativo
+with col_csv:
     csv = df_dre.to_csv().encode('utf-8')
-    st.download_button("📥 Baixar Planilha (CSV)", data=csv, file_name='dre_campanha.csv', mime='text/csv', use_container_width=True)
+    st.download_button("📊 Baixar Planilha (CSV/Excel)", data=csv, file_name='dre_campanha.csv', mime='text/csv', use_container_width=True)
 
-with col_down2:
-    # Botão PDF/Imprimir via JavaScript
-    # Este botão aciona a impressão do navegador, que permite "Salvar como PDF"
-    import streamlit.components.v1 as components
-    components.html(
-        """
-        <button onclick="window.print()" style="width: 100%; height: 45px; background-color: #ff4b4b; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-family: sans-serif;">
-            🖨️ Baixar Tela / Salvar em PDF
-        </button>
-        """,
-        height=50,
+with col_pdf:
+    # Gerando um HTML que o navegador transforma em PDF/Impressão de forma limpa
+    html_report = df_dre.to_html()
+    st.download_button(
+        label="📄 Exportar Relatório para Impressão",
+        data=html_report,
+        file_name="relatorio_dre.html",
+        mime="text/html",
+        use_container_width=True,
+        help="Baixe o arquivo e abra-o no navegador para imprimir em PDF com todos os dados."
     )
