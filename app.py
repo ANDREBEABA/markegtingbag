@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador de Franquia", layout="wide")
+st.set_page_config(page_title="DRE Executivo", layout="wide")
 
-# Tabela de Custos Reais
+# Tabela de Custos Reais (Anexo 1)
 dados_custos = {
     "5kg (36 Módulos)": {
         "modulos": 36,
@@ -17,77 +17,90 @@ dados_custos = {
     }
 }
 
-st.title("📈 Simulador de Campanhas e Comissões")
+st.title("📊 Demonstrativo de Resultados (DRE)")
 st.markdown("---")
 
-# Sidebar - Parâmetros
-st.sidebar.header("⚙️ Configuração")
+# --- SIDEBAR: INPUTS ---
+st.sidebar.header("⚙️ Configurações")
 tamanho = st.sidebar.selectbox("Tamanho do Saquinho", list(dados_custos.keys()))
 tiragem = st.sidebar.selectbox("Tiragem (unidades)", list(dados_custos[tamanho]["precos"].keys()))
-duracao = st.sidebar.selectbox("Duração da Campanha (meses)", [1, 3, 6])
-preco_venda = st.sidebar.number_input("Preço de Venda/Módulo (R$)", min_value=0.0, value=500.0)
+duracao = st.sidebar.selectbox("Duração da Campanha", [1, 3, 6], format_func=lambda x: f"{x} meses")
+preco_venda_mensal = st.sidebar.number_input("Valor Mensal por Módulo (R$)", min_value=0.0, value=500.0)
 
 st.sidebar.markdown("---")
 st.sidebar.header("👤 Representante")
-comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 50, 10)
+comissao_percent = st.sidebar.slider("Comissão (%)", 0, 50, 10)
 
-# Custos Fixos e Variáveis
-frete_total = 600.00
-royalties_mensal = 399.00
-mei_mensal = 81.00
-gasolina_mensal = 500.00
-outros_mensal = 200.00
-custo_prod = dados_custos[tamanho]["precos"][tiragem]
-mod_por_mes = dados_custos[tamanho]["modulos"]
+# --- VALORES FIXOS ---
+C_ROY = 399.00
+C_MEI = 81.00
+C_GAS = 500.00
+C_OUT = 200.00
+C_FRETE = 600.00
 
-# Processamento do DRE Mensal
-dados_dre = []
-faturamento_total = 0
+mod_base = dados_custos[tamanho]["modulos"]
+custo_prod_base = dados_custos[tamanho]["precos"][tiragem]
+
+# --- PREPARAÇÃO DOS DADOS (TRANSPOSTOS) ---
+# Criamos um dicionário onde cada chave é uma linha do DRE
+dre_data = {
+    "Faturamento (Receita)": [],
+    "(-) Produção": [],
+    "(-) Frete": [],
+    "(-) Royalties": [],
+    "(-) MEI": [],
+    "(-) Gasolina": [],
+    "(-) Outros Custos": [],
+    "(-) Comissão Representante": [],
+    "LUCRO LÍQUIDO": []
+}
+
+colunas_meses = [f"Mês {i}" for i in range(1, duracao + 1)]
 custo_total_acumulado = 0
+faturamento_total_acumulado = 0
 
-for mes in range(1, duracao + 1):
-    receita_mes = mod_por_mes * preco_venda
-    valor_comissao = receita_mes * (comissao_percent / 100)
+for i in range(1, duracao + 1):
+    receita_mes = mod_base * preco_venda_mensal
+    comissao_mes = receita_mes * (comissao_percent / 100)
+    prod_mes = custo_prod_base if i == 1 else 0.0
+    frete_mes = C_FRETE if i == 1 else 0.0
     
-    # Investimento inicial (Mês 1)
-    c_prod = custo_prod if mes == 1 else 0
-    c_frete = frete_total if mes == 1 else 0
+    despesas_mes = prod_mes + frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comissao_mes
+    lucro_mes = receita_mes - despesas_mes
     
-    total_custos_mes = c_prod + c_frete + royalties_mensal + mei_mensal + gasolina_mensal + outros_mensal + valor_comissao
-    lucro_mes = receita_mes - total_custos_mes
+    dre_data["Faturamento (Receita)"].append(receita_mes)
+    dre_data["(-) Produção"].append(prod_mes)
+    dre_data["(-) Frete"].append(frete_mes)
+    dre_data["(-) Royalties"].append(C_ROY)
+    dre_data["(-) MEI"].append(C_MEI)
+    dre_data["(-) Gasolina"].append(C_GAS)
+    dre_data["(-) Outros Custos"].append(C_OUT)
+    dre_data["(-) Comissão Representante"].append(comissao_mes)
+    dre_data["LUCRO LÍQUIDO"].append(lucro_mes)
     
-    dados_dre.append({
-        "Mês": f"Mês {mes}",
-        "Receita (R$)": receita_mes,
-        "Produção/Frete (R$)": c_prod + c_frete,
-        "Custos Fixos (R$)": royalties_mensal + mei_mensal + gasolina_mensal + outros_mensal,
-        "Comissão (R$)": valor_comissao,
-        "Lucro Líquido (R$)": lucro_mes
-    })
-    
-    faturamento_total += receita_mes
-    custo_total_acumulado += total_custos_mes
+    custo_total_acumulado += despesas_mes
+    faturamento_total_acumulado += receita_mes
 
-# --- RESUMO VISUAL ---
-lucro_final = faturamento_total - custo_total_acumulado
-margem_final = (lucro_final / faturamento_total * 100) if faturamento_total > 0 else 0
+# Criar DataFrame e adicionar coluna de Total
+df_dre = pd.DataFrame(dre_data, index=colunas_meses).T
+df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
+
+# --- EXIBIÇÃO ---
+lucro_final = faturamento_total_acumulado - custo_total_acumulado
+margem_final = (lucro_final / faturamento_total_acumulado * 100) if faturamento_total_acumulado > 0 else 0
+receita_por_modulo_total = preco_venda_mensal * duracao
+pe_modulos = custo_total_acumulado / receita_por_modulo_total if receita_por_modulo_total > 0 else 0
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Faturamento Total", f"R$ {faturamento_total:,.2f}")
-c2.metric("Lucro Líquido Total", f"R$ {lucro_final:,.2f}", delta=f"{margem_final:.1f}% Margem")
-c3.metric("Preço de Equilíbrio", f"R$ {(custo_total_acumulado / (mod_por_mes * duracao)):,.2f}")
+c1.metric("Faturamento Total", f"R$ {faturamento_total_acumulado:,.2f}")
+c2.metric("Lucro Líquido Final", f"R$ {lucro_final:,.2f}", delta=f"{margem_final:.1f}% Margem")
+c3.metric("Ponto de Equilíbrio", f"{pe_modulos:.1f} Módulos")
 
-st.subheader("📋 Demonstrativo Mensal Detalhado")
-df_dre = pd.DataFrame(dados_dre)
-st.table(df_dre.style.format({
-    "Receita (R$)": "{:,.2f}",
-    "Produção/Frete (R$)": "{:,.2f}",
-    "Custos Fixos (R$)": "{:,.2f}",
-    "Comissão (R$)": "{:,.2f}",
-    "Lucro Líquido (R$)": "{:,.2f}"
-}))
+st.subheader("📋 Tabela DRE Comparativa")
+st.dataframe(df_dre.style.format("{:,.2f}"), use_container_width=True)
 
-# Mensagem de Ponto de Equilíbrio
-modulos_totais = mod_por_mes * duracao
-pe_vendas = custo_total_acumulado / preco_venda
-st.warning(f"📌 Para cobrir todos os custos (incluindo a comissão de {comissao_percent}%), o franqueado precisa vender **{pe_vendas:.1f} módulos** de um total de {modulos_totais} disponíveis nos {duracao} meses.")
+st.info(f"""
+💡 **Resumo Estratégico:**
+Para esta campanha de **{duracao} meses**, o franqueado tem um custo total de **R$ {custo_total_acumulado:,.2f}**. 
+Como ele tem **{mod_base} módulos** para vender, o ponto de equilíbrio é de **{pe_modulos:.1f} módulos**.
+""")
