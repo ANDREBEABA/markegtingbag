@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="DRE Mensal de Campanhas", layout="wide")
+st.set_page_config(page_title="DRE Detalhado", layout="wide")
 
 # Dados de Custos Reais
 dados_custos = {
@@ -17,68 +17,87 @@ dados_custos = {
     }
 }
 
-st.title("📊 DRE Detalhado e Mensal")
+st.title("📊 Gestão Financeira da Campanha")
 st.markdown("---")
 
-# Configurações na Sidebar
-st.sidebar.header("Parâmetros")
+# Sidebar - Parâmetros
+st.sidebar.header("Parâmetros da Campanha")
 tamanho = st.sidebar.selectbox("Tamanho do Saquinho", list(dados_custos.keys()))
 tiragem = st.sidebar.selectbox("Tiragem", list(dados_custos[tamanho]["precos"].keys()))
-duracao = st.sidebar.selectbox("Duração da Campanha (meses)", [1, 3])
-preco_venda = st.sidebar.number_input("Preço de Venda por Módulo (R$)", min_value=0.0, value=500.0)
+duracao = st.sidebar.selectbox("Duração (meses)", [1, 3])
+preco_venda = st.sidebar.number_input("Preço de Venda/Módulo (R$)", min_value=0.0, value=500.0)
 
-# Cálculos Base
+# Definição dos Custos Fixos (Conforme sua solicitação)
+frete_total = 600.00
+royalties_mensal = 399.00
+mei_mensal = 81.00
+gasolina_mensal = 500.00
+outros_mensal = 200.00
+
+# Variáveis de Produção
 mod_por_mes = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
-frete = 600.00
-fixo_mensal = 399 + 81 + 500 + 200 # Royalties, MEI, Gasolina, Outros
 
-# Lógica Mensal para a Tabela DRE
-lista_dre = []
-faturamento_total = 0
-custo_total_acumulado = 0
+# Construção do DRE Mensal
+dados_dre = []
+faturamento_acumulado = 0
+custo_acumulado = 0
 
 for mes in range(1, duracao + 1):
     receita_mes = mod_por_mes * preco_venda
     
-    # Custos do Mês
-    c_prod_mes = custo_prod if mes == 1 else 0
-    c_frete_mes = frete if mes == 1 else 0
-    c_fixo_mes = fixo_mensal
+    # Custo de produção e frete apenas no Mês 1
+    c_prod = custo_prod if mes == 1 else 0
+    c_frete = frete_total if mes == 1 else 0
     
-    total_custos_mes = c_prod_mes + c_frete_mes + c_fixo_mes
+    # Custos fixos recorrentes
+    c_roy = royalties_mensal
+    c_mei = mei_mensal
+    c_gas = gasolina_mensal
+    c_out = outros_mensal
+    
+    total_custos_mes = c_prod + c_frete + c_roy + c_mei + c_gas + c_out
     lucro_mes = receita_mes - total_custos_mes
     
-    lista_dre.append({
+    dados_dre.append({
         "Mês": f"Mês {mes}",
         "Receita (R$)": receita_mes,
-        "Custo Prod/Frete (R$)": c_prod_mes + c_frete_mes,
-        "Custos Fixos (R$)": c_fixo_mes,
+        "Produção (R$)": c_prod,
+        "Frete (R$)": c_frete,
+        "Royalties (R$)": c_roy,
+        "MEI (R$)": c_mei,
+        "Gasolina (R$)": c_gas,
+        "Outros (R$)": c_out,
         "Lucro Líquido (R$)": lucro_mes
     })
     
-    faturamento_total += receita_mes
-    custo_total_acumulado += total_custos_mes
-
-# Ponto de Equilíbrio
-# Total de módulos vendidos na campanha inteira = mod_por_mes * duracao
-total_modulos_campanha = mod_por_mes * duracao
-preco_equilibrio = custo_total_acumulado / total_modulos_campanha
+    faturamento_acumulado += receita_mes
+    custo_acumulado += total_custos_mes
 
 # --- EXIBIÇÃO ---
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Faturamento Total", f"R$ {faturamento_total:,.2f}")
-col2.metric("Lucro Total", f"R$ {faturamento_total - custo_total_acumulado:,.2f}")
-col3.metric("Preço Mínimo (Módulo)", f"R$ {preco_equilibrio:,.2f}")
+# Resumo em Cartões
+c1, c2, c3 = st.columns(3)
+c1.metric("Faturamento Total", f"R$ {faturamento_acumulado:,.2f}")
+c2.metric("Investimento Total", f"R$ {custo_acumulado:,.2f}")
+lucro_final = faturamento_acumulado - custo_acumulado
+c3.metric("Lucro Final", f"R$ {lucro_final:,.2f}", delta=f"{(lucro_final/faturamento_acumulado*100):.1f}%")
 
-st.subheader("📅 Demonstrativo de Resultado Mensal (DRE)")
-df_dre = pd.DataFrame(lista_dre)
+st.subheader("📋 Demonstrativo de Resultado (DRE) Detalhado")
+
+# Transformar em DataFrame para mostrar a tabela
+df_dre = pd.DataFrame(dados_dre)
 st.table(df_dre.style.format({
     "Receita (R$)": "{:,.2f}",
-    "Custo Prod/Frete (R$)": "{:,.2f}",
-    "Custos Fixos (R$)": "{:,.2f}",
+    "Produção (R$)": "{:,.2f}",
+    "Frete (R$)": "{:,.2f}",
+    "Royalties (R$)": "{:,.2f}",
+    "MEI (R$)": "{:,.2f}",
+    "Gasolina (R$)": "{:,.2f}",
+    "Outros (R$)": "{:,.2f}",
     "Lucro Líquido (R$)": "{:,.2f}"
 }))
 
-st.info(f"💡 **Nota:** Na campanha de {duracao} meses, o franqueado vende um total de **{total_modulos_campanha} módulos**. O ponto de equilíbrio de R$ {preco_equilibrio:,.2f} considera a diluição dos custos iniciais ao longo de todo o período.")
+# Ponto de Equilíbrio
+pe_unidades = custo_acumulado / preco_venda
+st.warning(f"📌 **Ponto de Equilíbrio:** O franqueado precisa vender um total de **{pe_unidades:.1f} módulos** ao longo da campanha para cobrir todos os custos listados.")
