@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador Financeiro Pro", layout="wide")
+st.set_page_config(page_title="Simulador Financeiro Executivo", layout="wide")
 
-# Tabela de Custos Reais
+# Tabela de Custos Reais (Anexo 1)
 dados_custos = {
     "5kg (36 Módulos)": {
         "modulos": 36,
@@ -17,7 +17,7 @@ dados_custos = {
     }
 }
 
-st.title("📊 Simulador de Precificação e Viabilidade")
+st.title("📊 Simulador de Campanhas - DRE e Viabilidade")
 st.markdown("---")
 
 # --- SIDEBAR: CONFIGURAÇÕES ---
@@ -28,7 +28,7 @@ duracao = st.sidebar.selectbox("Duração da Campanha", [1, 3, 6], format_func=l
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Parâmetros de Venda")
-margem_alvo = st.sidebar.slider("Margem de Lucro Alvo (%)", 5, 70, 30)
+margem_alvo = st.sidebar.slider("Margem de Lucro Alvo (%)", 5, 80, 30)
 comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 25, 10)
 
 # --- CUSTOS FIXOS E SETUP ---
@@ -36,19 +36,27 @@ C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 81.00, 500.00, 200.00, 600.00
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
 mod_max = dados_custos[tamanho]["modulos"]
 
-# --- CÁLCULO DE SUGESTÃO (Baseado no valor total do contrato) ---
-# 1. Calculamos o custo total do período
+# --- LÓGICA DE SUGESTÃO DE PREÇO (Custo + Margem) ---
+# A comissão é tratada como custo no DRE, não altera a lógica de markup da venda do módulo
 custo_total_periodo = custo_prod + C_FRETE + ((C_ROY + C_MEI + C_GAS + C_OUT) * duracao)
-# 2. Preço total sugerido por módulo (Markup Divisor considerando margem e comissão)
-divisor = 1 - ((margem_alvo + comissao_percent) / 100)
-preco_total_contrato_sugerido = (custo_total_periodo / mod_max) / divisor
+preco_total_sugerido = (custo_total_periodo / mod_max) / (1 - (margem_alvo / 100))
 
 # --- INPUT DO VALOR PRATICADO ---
-v_total_venda = st.sidebar.number_input(f"Valor Total do Contrato (por módulo)", min_value=0.0, value=float(preco_total_contrato_sugerido))
+v_total_venda = st.sidebar.number_input(f"Valor Total do Contrato (por módulo)", min_value=0.0, value=float(preco_total_sugerido))
 v_mensal_venda = v_total_venda / duracao
 
 # --- PROCESSAMENTO DO DRE ---
-indices = ["Faturamento Bruto", "(-) Produção", "(-) Frete", "(-) Royalties", "(-) MEI", "(-) Gasolina", "(-) Outros Custos", "(-) Comissão", "LUCRO LÍQUIDO"]
+indices = [
+    "Faturamento Bruto", 
+    "(-) Produção", 
+    "(-) Frete", 
+    "(-) Royalties", 
+    "(-) MEI", 
+    "(-) Gasolina", 
+    "(-) Outros Custos", 
+    "(-) Comissão Representante", 
+    "LUCRO LÍQUIDO"
+]
 df_dre = pd.DataFrame(index=indices)
 
 for i in range(1, duracao + 1):
@@ -57,27 +65,25 @@ for i in range(1, duracao + 1):
     p_prod = custo_prod if i == 1 else 0.0
     p_frete = C_FRETE if i == 1 else 0.0
     
-    # Custos Fixos
-    despesas_mes = p_prod + p_frete + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes
-    lucro_mes = receita_mes - despesas_mes
+    lucro_mes = receita_mes - (p_prod + p_frete + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes)
     
     df_dre[f"Mês {i}"] = [
         receita_mes, p_prod, p_frete, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes
     ]
 
-# Adicionar Totalizador
+# Coluna de Total
 df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
 
-# --- CÁLCULO PONTO EQUILÍBRIO (VALOR NO MÊS 1) ---
-# Custos que precisam ser pagos no Mês 1 (fixos + produção)
+# --- PONTO DE EQUILÍBRIO (MÊS 1 EM VALOR) ---
 custos_fixos_setup_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
-# Faturamento necessário para que o lucro do Mês 1 seja zero, considerando a comissão
+# PE financeiro: quanto vender para cobrir custos + comissão do que foi vendido
 faturamento_pe_mes1 = custos_fixos_setup_mes1 / (1 - (comissao_percent / 100))
 
 # --- FORMATAÇÃO E CORES ---
 def highlight_lucro(val):
     if isinstance(val, (int, float)):
-        color = '#90EE90' if val >= 0 else '#FFB6C1' # Verde claro ou Vermelho claro
+        # Verde claro para positivo, vermelho claro para negativo
+        color = '#90EE90' if val >= 0 else '#FFB6C1'
         return f'background-color: {color}'
     return ''
 
@@ -87,22 +93,22 @@ styled_df = df_dre.style.format("{:,.2f}")\
 
 st.dataframe(styled_df, use_container_width=True)
 
-# --- DASHBOARD DE MÉTRICAS ---
+# --- MÉTRICAS DE RESUMO ---
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
 
 with c1:
-    st.metric("Sugestão de Venda (Total)", f"R$ {p_total_sugerido:,.2f}")
-    st.caption(f"Valor sugerido para {duracao} meses (por módulo)")
+    st.metric("Sugestão de Venda (Total)", f"R$ {preco_total_sugerido:,.2f}")
+    st.caption(f"Valor para {duracao} meses (garante {margem_alvo}% de margem bruta)")
 
 with c2:
     st.metric("Ponto Equilíbrio (Mês 1)", f"R$ {faturamento_pe_mes1:,.2f}")
-    st.caption("Faturamento bruto necessário no 1º mês")
+    st.caption("Faturamento bruto necessário no 1º mês para pagar tudo")
 
 with c3:
-    lucro_final = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
-    margem_real = (lucro_final / df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]) * 100
-    st.metric("Lucro Líquido Final", f"R$ {lucro_final:,.2f}", f"{margem_real:.1f}% Margem Real")
+    lucro_acumulado = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
+    st.metric("Lucro Líquido Final", f"R$ {lucro_acumulado:,.2f}")
+    st.caption(f"Resultado total após {duracao} meses")
 
 # Botão de Download
 csv = df_dre.to_csv().encode('utf-8')
