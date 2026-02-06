@@ -27,13 +27,20 @@ tiragem = st.sidebar.selectbox("Tiragem (unidades)", list(dados_custos[tamanho][
 duracao = st.sidebar.selectbox("Duração da Campanha", [1, 3, 6], format_func=lambda x: f"{x} meses")
 
 st.sidebar.markdown("---")
+st.sidebar.header("🚚 Custos de Logística e Extras")
+# Novos campos para o franqueado alterar conforme a realidade local
+C_FRETE = st.sidebar.number_input("Valor do Frete (R$)", min_value=0.0, value=600.00, step=50.0)
+C_GAS = st.sidebar.number_input("Custo de Gasolina/Mês (R$)", min_value=0.0, value=500.00, step=50.0)
+C_OUT = st.sidebar.number_input("Outros Custos/Mês (R$)", min_value=0.0, value=200.00, step=50.0)
+
+st.sidebar.markdown("---")
 st.sidebar.header("💰 Entrada de Valores")
-# Valor total inserido manualmente pelo franqueado
 v_total_venda_input = st.sidebar.number_input(f"Valor Total do Contrato por Módulo (R$)", min_value=0.0, value=1500.0, step=50.0)
 comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 30, 10)
 
-# --- CUSTOS FIXOS E SETUP ---
-C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 87.05, 500.00, 200.00, 600.00
+# --- CUSTOS FIXOS (TRAVADOS) ---
+C_ROY, C_MEI = 399.00, 81.00 # Royalties e MEI seguem fixos conforme o modelo
+
 mod_max = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
 v_mensal_venda = v_total_venda_input / duracao
@@ -58,6 +65,7 @@ for i in range(1, duracao + 1):
     p_prod_mes = custo_prod if i == 1 else 0.0
     p_frete_mes = C_FRETE if i == 1 else 0.0
     
+    # Gasolina, Outros, Royalties e MEI ocorrem todos os meses da campanha
     lucro_mes = receita_mes - (p_prod_mes + p_frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes)
     
     df_dre[f"Mês {i}"] = [
@@ -95,25 +103,21 @@ c1, c2, c3 = st.columns(3)
 
 with c1:
     st.metric("Margem Líquida Real", f"{margem_real:.1f}%")
-    st.caption("Margem final acumulada do projeto")
 
 with c2:
     st.metric("Ponto de Equilíbrio (Mês 1)", f"R$ {faturamento_pe_mes1:,.2f}")
-    st.caption("Faturamento necessário no 1º mês p/ lucro zero")
 
 with c3:
     st.metric("Lucro Líquido Total", f"R$ {lucro_total_campanha:,.2f}")
-    st.caption("Valor final que sobra no bolso")
 
-# Alerta de Viabilidade do Mês 1
+# Alerta de Viabilidade
 lucro_mes1 = df_dre.loc["LUCRO LÍQUIDO", "Mês 1"]
 if lucro_mes1 >= 0:
     st.success(f"✅ Operação Saudável: O primeiro mês já gera lucro positivo!")
 else:
     st.warning(f"⚠️ Atenção ao Caixa: O Mês 1 terá um déficit de R$ {abs(lucro_mes1):,.2f}.")
 
-# --- BOTÃO DE DOWNLOAD (APENAS CSV) ---
-st.markdown("---")
+# --- BOTÃO DE DOWNLOAD ---
 csv = df_dre.to_csv().encode('utf-8')
 st.download_button(
     label="📊 Baixar Relatório DRE (CSV/Excel)",
