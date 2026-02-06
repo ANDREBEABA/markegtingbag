@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-import io
 
-st.set_page_config(page_title="Simulador Financeiro", layout="wide")
+st.set_page_config(page_title="Simulador Financeiro de Franquia", layout="wide")
 
-# Tabela de Custos Reais
+# Tabela de Custos Reais (Anexo 1)
 dados_custos = {
     "5kg (36 Módulos)": {
         "modulos": 36,
@@ -29,6 +28,7 @@ duracao = st.sidebar.selectbox("Duração da Campanha", [1, 3, 6], format_func=l
 
 st.sidebar.markdown("---")
 st.sidebar.header("💰 Entrada de Valores")
+# Valor total inserido manualmente pelo franqueado
 v_total_venda_input = st.sidebar.number_input(f"Valor Total do Contrato por Módulo (R$)", min_value=0.0, value=1500.0, step=50.0)
 comissao_percent = st.sidebar.slider("Comissão do Representante (%)", 0, 30, 10)
 
@@ -39,7 +39,17 @@ custo_prod = dados_custos[tamanho]["precos"][tiragem]
 v_mensal_venda = v_total_venda_input / duracao
 
 # --- PROCESSAMENTO DO DRE ---
-indices = ["Faturamento Bruto", "(-) Produção", "(-) Frete", "(-) Royalties", "(-) MEI", "(-) Gasolina", "(-) Outros Custos", "(-) Comissão Representante", "LUCRO LÍQUIDO"]
+indices = [
+    "Faturamento Bruto", 
+    "(-) Produção", 
+    "(-) Frete", 
+    "(-) Royalties", 
+    "(-) MEI", 
+    "(-) Gasolina", 
+    "(-) Outros Custos", 
+    "(-) Comissão Representante", 
+    "LUCRO LÍQUIDO"
+]
 df_dre = pd.DataFrame(index=indices)
 
 for i in range(1, duracao + 1):
@@ -47,10 +57,24 @@ for i in range(1, duracao + 1):
     comis_mes = receita_mes * (comissao_percent / 100)
     p_prod_mes = custo_prod if i == 1 else 0.0
     p_frete_mes = C_FRETE if i == 1 else 0.0
+    
     lucro_mes = receita_mes - (p_prod_mes + p_frete_mes + C_ROY + C_MEI + C_GAS + C_OUT + comis_mes)
-    df_dre[f"Mês {i}"] = [receita_mes, p_prod_mes, p_frete_mes, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes]
+    
+    df_dre[f"Mês {i}"] = [
+        receita_mes, p_prod_mes, p_frete_mes, C_ROY, C_MEI, C_GAS, C_OUT, comis_mes, lucro_mes
+    ]
 
+# Coluna de Total Acumulado
 df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
+
+# --- CÁLCULOS DE RESULTADO ---
+faturamento_total_campanha = df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]
+lucro_total_campanha = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
+margem_real = (lucro_total_campanha / faturamento_total_campanha * 100) if faturamento_total_campanha > 0 else 0
+
+# Ponto de Equilíbrio Financeiro (Baseado no Mês 1)
+custos_setup_fixos_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
+faturamento_pe_mes1 = custos_setup_fixos_mes1 / (1 - (comissao_percent / 100))
 
 # --- FORMATAÇÃO E CORES ---
 def highlight_lucro(val):
@@ -60,41 +84,41 @@ def highlight_lucro(val):
     return ''
 
 st.subheader(f"📋 DRE Comparativo - {tamanho} / {tiragem} un. / {duracao} meses")
-styled_df = df_dre.style.format("{:,.2f}").applymap(highlight_lucro, subset=pd.IndexSlice[['LUCRO LÍQUIDO'], :])
+styled_df = df_dre.style.format("{:,.2f}")\
+    .applymap(highlight_lucro, subset=pd.IndexSlice[['LUCRO LÍQUIDO'], :])
+
 st.dataframe(styled_df, use_container_width=True)
 
 # --- DASHBOARD DE MÉTRICAS ---
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
-lucro_total_campanha = df_dre.loc["LUCRO LÍQUIDO", "TOTAL ACUMULADO"]
-faturamento_total_campanha = df_dre.loc["Faturamento Bruto", "TOTAL ACUMULADO"]
-margem_real = (lucro_total_campanha / faturamento_total_campanha * 100) if faturamento_total_campanha > 0 else 0
-custos_setup_fixos_mes1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
-faturamento_pe_mes1 = custos_setup_fixos_mes1 / (1 - (comissao_percent / 100))
 
 with c1:
     st.metric("Margem Líquida Real", f"{margem_real:.1f}%")
+    st.caption("Margem final acumulada do projeto")
+
 with c2:
     st.metric("Ponto de Equilíbrio (Mês 1)", f"R$ {faturamento_pe_mes1:,.2f}")
+    st.caption("Faturamento necessário no 1º mês p/ lucro zero")
+
 with c3:
     st.metric("Lucro Líquido Total", f"R$ {lucro_total_campanha:,.2f}")
+    st.caption("Valor final que sobra no bolso")
 
-# --- BOTÕES DE DOWNLOAD (RESOLVIDO) ---
+# Alerta de Viabilidade do Mês 1
+lucro_mes1 = df_dre.loc["LUCRO LÍQUIDO", "Mês 1"]
+if lucro_mes1 >= 0:
+    st.success(f"✅ Operação Saudável: O primeiro mês já gera lucro positivo!")
+else:
+    st.warning(f"⚠️ Atenção ao Caixa: O Mês 1 terá um déficit de R$ {abs(lucro_mes1):,.2f}.")
+
+# --- BOTÃO DE DOWNLOAD (APENAS CSV) ---
 st.markdown("---")
-col_csv, col_pdf = st.columns(2)
-
-with col_csv:
-    csv = df_dre.to_csv().encode('utf-8')
-    st.download_button("📊 Baixar Planilha (CSV/Excel)", data=csv, file_name='dre_campanha.csv', mime='text/csv', use_container_width=True)
-
-with col_pdf:
-    # Gerando um HTML que o navegador transforma em PDF/Impressão de forma limpa
-    html_report = df_dre.to_html()
-    st.download_button(
-        label="📄 Exportar Relatório para Impressão",
-        data=html_report,
-        file_name="relatorio_dre.html",
-        mime="text/html",
-        use_container_width=True,
-        help="Baixe o arquivo e abra-o no navegador para imprimir em PDF com todos os dados."
-    )
+csv = df_dre.to_csv().encode('utf-8')
+st.download_button(
+    label="📊 Baixar Relatório DRE (CSV/Excel)",
+    data=csv,
+    file_name='dre_campanha_franquia.csv',
+    mime='text/csv',
+    use_container_width=True
+)
