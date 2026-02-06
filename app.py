@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador de Campanhas Profissional", layout="wide")
+st.set_page_config(page_title="Simulador Financeiro de Franquia", layout="wide")
 
 # Tabela de Custos Reais
 dados_custos = {
@@ -17,7 +17,7 @@ dados_custos = {
     }
 }
 
-st.title("📊 Simulador de Viabilidade Financeira")
+st.title("💰 Simulador de Viabilidade Financeira")
 st.markdown("---")
 
 # --- SIDEBAR: CONFIGURAÇÕES ---
@@ -36,87 +36,70 @@ C_ROY, C_MEI, C_GAS, C_OUT, C_FRETE = 399.00, 81.00, 500.00, 200.00, 600.00
 mod_max = dados_custos[tamanho]["modulos"]
 custo_prod = dados_custos[tamanho]["precos"][tiragem]
 
-# --- LÓGICA DE SUGESTÃO DE PREÇO TOTAL ---
-# Preço necessário para o Mês 1 ser positivo
+# --- LÓGICA DE SUGESTÃO DE PREÇO (Foco no Lucro Positivo no Mês 1) ---
+# Para o Mês 1 ser positivo: Receita * (1 - Comis) > (Prod + Frete + Fixos)
 custos_mes_1 = custo_prod + C_FRETE + C_ROY + C_MEI + C_GAS + C_OUT
-# Preço MENSAL sugerido
-p_mensal_sugerido = (custos_mes_1 / mod_max) / (1 - ((margem_alvo + comissao_percent) / 100))
-# Preço TOTAL sugerido (Conforme solicitado: multiplicado por 1, 3 ou 6)
-p_total_sugerido = p_mensal_sugerido * duracao
+preco_sugerido_minimo_mês1 = (custos_mes_1 / mod_max) / (1 - ((margem_alvo + comissao_percent) / 100))
 
-# Input do preço praticado (Valor Total)
-st.sidebar.info(f"Sugestão de Valor Total: R$ {p_total_sugerido:,.2f}")
-v_total_praticado = st.sidebar.number_input(f"Valor Total do Contrato por Módulo (R$)", min_value=0.0, value=float(p_total_sugerido))
-p_venda_mensal = v_total_praticado / duracao
+# Input do preço praticado
+preco_venda = st.sidebar.number_input("Preço Mensal por Módulo (R$)", min_value=0.0, value=float(preco_sugerido_minimo_mês1))
 
 # --- PROCESSAMENTO DO DRE ---
 dre_data = {
     "Faturamento (Receita)": [],
-    "(-) Produção": [],
-    "(-) Frete": [],
-    "(-) Royalties": [],
-    "(-) MEI": [],
-    "(-) Gasolina": [],
-    "(-) Outros Custos": [],
+    "(-) Produção e Frete": [],
+    "(-) Custos Fixos (Roy/MEI/Gas/Out)": [],
     "(-) Comissão Representante": [],
     "LUCRO LÍQUIDO": []
 }
 
+total_fixos_mensais = C_ROY + C_MEI + C_GAS + C_OUT
+
 for i in range(1, duracao + 1):
-    receita_mes = mod_max * p_venda_mensal
+    receita_mes = mod_max * preco_venda
     comis_mes = receita_mes * (comissao_percent / 100)
-    p_prod_mes = custo_prod if i == 1 else 0.0
-    p_frete_mes = C_FRETE if i == 1 else 0.0
+    p_setup = (custo_prod + C_FRETE) if i == 1 else 0.0
     
-    lucro_mes = receita_mes - p_prod_mes - p_frete_mes - C_ROY - C_MEI - C_GAS - C_OUT - comis_mes
+    lucro_mes = receita_mes - p_setup - total_fixos_mensais - comis_mes
     
     dre_data["Faturamento (Receita)"].append(receita_mes)
-    dre_data["(-) Produção"].append(p_prod_mes)
-    dre_data["(-) Frete"].append(p_frete_mes)
-    dre_data["(-) Royalties"].append(C_ROY)
-    dre_data["(-) MEI"].append(C_MEI)
-    dre_data["(-) Gasolina"].append(C_GAS)
-    dre_data["(-) Outros Custos"].append(C_OUT)
+    dre_data["(-) Produção e Frete"].append(p_setup)
+    dre_data["(-) Custos Fixos (Roy/MEI/Gas/Out)"].append(total_fixos_mensais)
     dre_data["(-) Comissão Representante"].append(comis_mes)
     dre_data["LUCRO LÍQUIDO"].append(lucro_mes)
 
-# DataFrame e Transposição
+# DataFrame para exibição
 df_dre = pd.DataFrame(dre_data, index=[f"Mês {i}" for i in range(1, duracao + 1)]).T
-df_dre["TOTAL ACUMULADO"] = df_dre.sum(axis=1)
+df_dre["TOTAL"] = df_dre.sum(axis=1)
 
-# --- FUNÇÃO DE ESTILIZAÇÃO PARA AS CORES ---
-def style_lucro(row):
-    if row.name == 'LUCRO LÍQUIDO':
-        return ['background-color: #90EE90' if v >= 0 else 'background-color: #FFB6C1' for v in row]
-    return ['' for _ in row]
+# --- CÁLCULO PONTO EQUILÍBRIO FINANCEIRO (Mês 1) ---
+# Quanto preciso faturar no Mês 1 para o lucro ser ZERO?
+faturamento_equilibrio_mes1 = custos_mes_1 / (1 - (comissao_percent / 100))
+modulos_equilibrio_mes1 = faturamento_equilibrio_mes1 / preco_venda if preco_venda > 0 else 0
 
 # --- EXIBIÇÃO DE MÉTRICAS ---
-lucro_mes_1 = df_dre.loc["LUCRO LÍQUIDO", "Mês 1"]
-custo_total_campanha = (custo_prod + C_FRETE) + ( (C_ROY + C_MEI + C_GAS + C_OUT) * duracao )
-faturamento_total_campanha = mod_max * v_total_praticado
+lucro_mês1 = df_dre.loc["LUCRO LÍQUIDO", "Mês 1"]
 
 c1, c2, c3 = st.columns(3)
 with c1:
-    st.metric("Sugestão de Valor Total", f"R$ {p_total_sugerido:,.2f}")
-    st.caption(f"Valor por módulo para os {duracao} meses")
+    st.metric("Sugestão de Preço", f"R$ {preco_sugerido_minimo_mês1:,.2f}", help="Preço para garantir lucro positivo desde o Mês 1")
 with c2:
-    st.metric("Lucro Líquido (Mês 1)", f"R$ {lucro_mes_1:,.2f}")
-    st.caption("Visão crítica de início de operação")
+    color = "normal" if lucro_mês1 >= 0 else "inverse"
+    st.metric("Lucro Líquido (Mês 1)", f"R$ {lucro_mês1:,.2f}", delta_color=color)
+    st.caption("Foco principal: Deve ser positivo.")
 with c3:
-    pe_financeiro = (custos_mes_1 / (1 - (comissao_percent/100))) / p_venda_mensal if p_venda_mensal > 0 else 0
-    st.metric("Ponto Equilíbrio (Mês 1)", f"{pe_financeiro:.1f} Mód.")
-    st.caption("Vendas necessárias no 1º mês")
+    st.metric("Ponto de Equilíbrio (Mês 1)", f"R$ {faturamento_equilibrio_mes1:,.2f}")
+    st.caption(f"Ou vender {modulos_equilibrio_mes1:.1f} módulos no 1º mês.")
 
 st.subheader("📋 Demonstrativo de Resultados (DRE)")
-# Aplicando estilo e exibindo
-st.dataframe(df_dre.style.apply(style_lucro, axis=1).format("{:,.2f}"), use_container_width=True)
+st.dataframe(df_dre.style.format("{:,.2f}"), use_container_width=True)
 
-# Alertas
-if lucro_mes_1 >= 0:
-    st.success(f"✅ Campanha Viável! O Mês 1 já apresenta lucro positivo de R$ {lucro_mes_1:,.2f}.")
+# Alertas de Viabilidade
+if lucro_mês1 < 0:
+    st.error(f"⚠️ **Atenção:** Com este preço, o Mês 1 apresenta prejuízo de R$ {abs(lucro_mês1):,.2f}. O franqueado precisará de fôlego financeiro para cobrir o início da operação.")
 else:
-    st.error(f"⚠️ Alerta de Caixa: O Mês 1 terá um déficit de R$ {abs(lucro_mes_1):,.2f}. O retorno total virá nos meses seguintes.")
+    st.success(f"✅ **Campanha Saudável:** O primeiro mês já gera um lucro de R$ {lucro_mês1:,.2f}. O Ponto de Equilíbrio foi atingido!")
 
-# Download
+# Botão de Download
 csv = df_dre.to_csv().encode('utf-8')
-st.download_button("📥 Baixar Relatório CSV", data=csv, file_name='dre_campanha.csv', mime='text/csv')
+st.download_button("📥 Baixar Relatório Completo", data=csv, file_name='dre_campanha.csv', mime='text/csv')
